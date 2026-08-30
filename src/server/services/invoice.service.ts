@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { AppError, NotFoundError } from "@/server/errors";
 
@@ -13,6 +13,20 @@ function invoiceNumberPrefix(): string {
 
 async function nextInvoiceNumber(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
   const count = await tx.invoice.count({ where: { invoiceNumber: { startsWith: prefix } } });
+  return `${prefix}${String(count + 1).padStart(4, "0")}`;
+}
+
+function creditNoteNumberPrefix(): string {
+  const now = new Date();
+  const datePart =
+    String(now.getFullYear()) +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+  return `CRN-${datePart}-`;
+}
+
+async function nextCreditNoteNumber(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
+  const count = await tx.creditNote.count({ where: { creditNoteNumber: { startsWith: prefix } } });
   return `${prefix}${String(count + 1).padStart(4, "0")}`;
 }
 
@@ -116,6 +130,7 @@ export async function getInvoiceById(id: string) {
     include: {
       items: { include: { product: { select: { id: true, stock: true } } } },
       client: { select: { id: true, code: true, name: true } },
+      creditNote: true,
     },
   });
   if (!invoice) throw new NotFoundError("Invoice not found");
@@ -129,6 +144,7 @@ export async function listAllInvoices(page: number, limit: number) {
       skip,
       take: limit,
       orderBy: { createdAt: "desc" },
+      include: { creditNote: true },
     }),
     prisma.invoice.count(),
   ]);
@@ -139,11 +155,59 @@ export async function listAllInvoices(page: number, limit: number) {
 }
 
 export async function updateInvoicePaymentStatus(id: string, paymentStatus: "UNPAID" | "PAID") {
-  const existing = await prisma.invoice.findUnique({ where: { id } });
+  const existing = await prisma.invoice.findUnique({ where: { id }, include: { creditNote: true } });
   if (!existing) throw new NotFoundError("Invoice not found");
+  if (existing.creditNote) throw new AppError("A credited invoice cannot have its payment status changed", 409, "INVOICE_CREDITED");
   return prisma.invoice.update({
     where: { id },
     data: { paymentStatus },
-    include: { items: true, client: { select: { id: true, code: true, name: true } } },
+    include: { items: true, client: { select: { id: true, code: true, name: true } }, creditNote: true },
   });
+}
+
+export async function issueCreditNote(invoiceId: string, input: { reason?: string }) {
+  const prefix = creditNoteNumberPrefix();
+  const MAX_ATTEMPTS = 5;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const invoice = await tx.invoice.findUnique({
+            where: { id: invoiceId },
+            include: { items: true, creditNote: true },
+          });
+          if (!invoice) throw new NotFoundError("Invoice not found");
+          if (invoice.creditNote) throw new AppError("A credit note has already been issued for this invoice", 409, "ALREADY_CREDITED");
+
+          for (const item of invoice.items) {
+            await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity } } });
+          }
+
+          const creditNoteNumber = await nextCreditNoteNumber(tx, prefix);
+          return tx.creditNote.create({
+            data: {
+              creditNoteNumber,
+              invoiceId: invoice.id,
+              amount: invoice.totalAmount,
+              reason: input.reason?.trim() || null,
+            },
+          });
+        },
+        { maxWait: 10_000, timeout: 15_000 }
+      );
+    } catch (e) {
+      const isCollision =
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002" &&
+        (e.meta?.target as string[] | undefined)?.includes("credit_note_number");
+      if (isCollision && attempt < MAX_ATTEMPTS) continue;
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        throw new AppError("A credit note has already been issued for this invoice", 409, "ALREADY_CREDITED");
+      }
+      throw e;
+    }
+  }
+
+  throw new AppError("Could not generate a unique credit note number, please try again", 409, "CREDIT_NOTE_NUMBER_CONFLICT");
 }

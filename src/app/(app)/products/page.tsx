@@ -4,11 +4,65 @@ import { getSession } from "@/lib/auth/get-session";
 import { listAllProductsAdmin } from "@/server/services/product.service";
 import { redirect } from "next/navigation";
 
-export default async function ProductsPage() {
+type SortField = "code" | "name" | "stock" | "cost";
+type SortDirection = "asc" | "desc";
+
+const sortLabels: Record<SortField, string> = {
+  code: "Code",
+  name: "Name",
+  stock: "Stock",
+  cost: "Current cost",
+};
+
+function isSortField(value: string | undefined): value is SortField {
+  return value === "code" || value === "name" || value === "stock" || value === "cost";
+}
+
+function sortProducts<T extends { code: string; name: string; stock: number; currentCost: string }>(
+  products: T[],
+  field: SortField,
+  direction: SortDirection
+) {
+  const multiplier = direction === "asc" ? 1 : -1;
+  const textCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+  return [...products].sort((a, b) => {
+    if (field === "stock") return (a.stock - b.stock) * multiplier;
+    if (field === "cost") return (Number(a.currentCost) - Number(b.currentCost)) * multiplier;
+    return textCollator.compare(a[field], b[field]) * multiplier;
+  });
+}
+
+function SortHeader({ field, label, activeField, direction }: { field: SortField; label: string; activeField: SortField; direction: SortDirection }) {
+  const isActive = field === activeField;
+  const nextDirection: SortDirection = isActive && direction === "asc" ? "desc" : "asc";
+  const symbol = isActive ? (direction === "asc" ? "↑" : "↓") : "↕";
+
+  return (
+    <Link
+      href={`/products?sort=${field}&direction=${nextDirection}`}
+      className="inline-flex items-center gap-1 transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+      aria-label={`Sort by ${label}, ${nextDirection === "asc" ? "ascending" : "descending"}`}
+      title={`Sort by ${label}`}
+    >
+      {label}
+      <span aria-hidden="true" className={isActive ? "text-foreground" : "text-muted-foreground"}>
+        {symbol}
+      </span>
+    </Link>
+  );
+}
+
+type Props = { searchParams: Promise<{ sort?: string; direction?: string }> };
+
+export default async function ProductsPage({ searchParams }: Props) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const products = await listAllProductsAdmin();
+  const query = await searchParams;
+  const sortField = isSortField(query.sort) ? query.sort : "name";
+  const sortDirection: SortDirection = query.direction === "desc" ? "desc" : "asc";
+  const products = sortProducts(await listAllProductsAdmin(), sortField, sortDirection);
   const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
   const activeCount = products.filter((p) => p.isActive).length;
 
@@ -45,12 +99,20 @@ export default async function ProductsPage() {
           <table className="w-full min-w-150 text-sm">
             <thead>
               <tr className="table-head">
-                <th className="px-4 py-3 font-medium">Code</th>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 text-right font-medium">Stock</th>
-                <th className="px-4 py-3 text-right font-medium">Current cost</th>
+                <th className="px-4 py-3 font-medium">
+                  <SortHeader field="code" label={sortLabels.code} activeField={sortField} direction={sortDirection} />
+                </th>
+                <th className="px-4 py-3 font-medium">
+                  <SortHeader field="name" label={sortLabels.name} activeField={sortField} direction={sortDirection} />
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  <SortHeader field="stock" label={sortLabels.stock} activeField={sortField} direction={sortDirection} />
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  <SortHeader field="cost" label={sortLabels.cost} activeField={sortField} direction={sortDirection} />
+                </th>
                 <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 text-right font-medium">Edit</th>
+                <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -68,6 +130,9 @@ export default async function ProductsPage() {
                     <span className={`badge ${p.isActive ? "badge-paid" : "badge-neutral"}`}>{p.isActive ? "Active" : "Inactive"}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
+                    <Link href={`/products/${p.id}`} className="mr-3 text-xs font-semibold text-primary hover:underline">
+                      View
+                    </Link>
                     <Link href={`/products/${p.id}?edit=1`} className="text-xs font-semibold text-primary hover:underline">
                       Edit
                     </Link>

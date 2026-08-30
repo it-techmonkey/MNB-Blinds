@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { ProductDetailBody } from "@/components/ProductDetailBody";
 import { getSession } from "@/lib/auth/get-session";
-import { getProductById, getProductRestocks } from "@/server/services/product.service";
+import { getProductById, getProductRestocks, getProductStockAdjustments } from "@/server/services/product.service";
 import { redirect, notFound } from "next/navigation";
 import { NotFoundError } from "@/server/errors";
 
@@ -20,12 +20,12 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
-  const restocks = await getProductRestocks(id);
+  const [restocks, stockAdjustments] = await Promise.all([getProductRestocks(id), getProductStockAdjustments(id)]);
 
   return (
     <div className="content-stack">
       <PageHeader kicker="Inventory" title={product.name} subtitle={`Code ${product.code}`} />
-      <ProductDetailBody product={product} restocks={restocks} autoOpenEdit={edit === "1"} />
+      <ProductDetailBody product={product} restocks={restocks} stockAdjustments={stockAdjustments} autoOpenEdit={edit === "1"} />
     </div>
   );
 }

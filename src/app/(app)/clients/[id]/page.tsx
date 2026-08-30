@@ -6,13 +6,14 @@ import { serializeInvoiceRow } from "@/server/serialize";
 import { redirect, notFound } from "next/navigation";
 import { NotFoundError } from "@/server/errors";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> };
 
-export default async function ClientDetailPage({ params }: Props) {
+export default async function ClientDetailPage({ params, searchParams }: Props) {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const { id } = await params;
+  const { edit } = await searchParams;
   let client;
   let invoices;
   try {
@@ -25,7 +26,7 @@ export default async function ClientDetailPage({ params }: Props) {
   return (
     <div className="content-stack">
       <PageHeader kicker="Accounts" title={client.name} subtitle={`Code ${client.code}`} />
-      <ClientDetailBody client={client} invoices={invoices.map(serializeInvoiceRow)} />
+      <ClientDetailBody client={client} invoices={invoices.map(serializeInvoiceRow)} autoOpenEdit={edit === "1"} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 /** User-facing hint when Prisma cannot connect (Neon, local Postgres, etc.). */
 export function connectionErrorResponse(error: unknown): { message: string; status: number } | null {

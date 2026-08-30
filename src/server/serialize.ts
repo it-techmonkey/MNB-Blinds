@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceItem, Prisma } from "@prisma/client";
+import type { CreditNote, Invoice, InvoiceItem, Prisma } from "@/generated/prisma/client";
 
 /** Stable string for Prisma.Decimal in UI and PDFs */
 export function formatDecimal(d: Prisma.Decimal): string {
@@ -6,13 +6,25 @@ export function formatDecimal(d: Prisma.Decimal): string {
 }
 
 /** List row without line items (lighter DB payload). */
-export function serializeInvoiceRow(inv: Invoice) {
+function serializeCreditNote(creditNote: CreditNote) {
+  return {
+    id: creditNote.id,
+    creditNoteNumber: creditNote.creditNoteNumber,
+    amount: formatDecimal(creditNote.amount),
+    reason: creditNote.reason,
+    createdAt: creditNote.createdAt.toISOString(),
+  };
+}
+
+export function serializeInvoiceRow(inv: Invoice & { creditNote?: CreditNote | null }) {
   return {
     id: inv.id,
     invoiceNumber: inv.invoiceNumber,
     clientId: inv.clientId,
     clientName: inv.clientNameSnapshot,
     paymentStatus: inv.paymentStatus,
+    isCredited: Boolean(inv.creditNote),
+    creditNote: inv.creditNote ? serializeCreditNote(inv.creditNote) : null,
     totalAmount: formatDecimal(inv.totalAmount),
     createdAt: inv.createdAt.toISOString(),
     updatedAt: inv.updatedAt.toISOString(),
@@ -24,6 +36,7 @@ type InvoiceWithRelations = Invoice & {
     product?: { id: string; stock: number } | null;
   })[];
   client?: { id: string; code: string; name: string } | null;
+  creditNote?: CreditNote | null;
 };
 
 export function serializeInvoice(inv: InvoiceWithRelations) {
@@ -34,6 +47,8 @@ export function serializeInvoice(inv: InvoiceWithRelations) {
     clientName: inv.clientNameSnapshot,
     client: inv.client ?? undefined,
     paymentStatus: inv.paymentStatus,
+    isCredited: Boolean(inv.creditNote),
+    creditNote: inv.creditNote ? serializeCreditNote(inv.creditNote) : null,
     totalAmount: formatDecimal(inv.totalAmount),
     createdAt: inv.createdAt.toISOString(),
     updatedAt: inv.updatedAt.toISOString(),

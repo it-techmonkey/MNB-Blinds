@@ -44,10 +44,7 @@ export function NewInvoiceClient() {
   }, []);
 
   useEffect(() => {
-    if (!clientId) {
-      setClientPrices(new Map());
-      return;
-    }
+    if (!clientId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -70,6 +67,11 @@ export function NewInvoiceClient() {
       cancelled = true;
     };
   }, [clientId]);
+
+  function selectClient(nextClientId: string) {
+    setClientId(nextClientId);
+    if (!nextClientId) setClientPrices(new Map());
+  }
 
   function priceFor(productId: string): string {
     return prices[productId] ?? clientPrices.get(productId) ?? "";
@@ -141,7 +143,7 @@ export function NewInvoiceClient() {
         <label className="field-label mt-3 text-xs" htmlFor="inv-client">
           Select client
         </label>
-        <select id="inv-client" className="select-field mt-1.5 w-full max-w-lg" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+        <select id="inv-client" className="select-field mt-1.5 w-full max-w-lg" value={clientId} onChange={(e) => selectClient(e.target.value)}>
           <option value="">— Choose —</option>
           {clients.map((c) => (
             <option key={c.id} value={c.id}>

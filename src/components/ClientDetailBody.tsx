@@ -21,6 +21,7 @@ type Invoice = {
   paymentStatus: string;
   totalAmount: string;
   createdAt: string;
+  creditNote: { creditNoteNumber: string } | null;
 };
 
 type Product = { id: string; code: string; name: string; isActive: boolean };
@@ -131,6 +132,9 @@ function ProductPricesSection({ clientId }: { clientId: string }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [showPercentageAdjustment, setShowPercentageAdjustment] = useState(false);
+  const [percentage, setPercentage] = useState("");
+  const [adjusting, setAdjusting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,16 +187,45 @@ function ProductPricesSection({ clientId }: { clientId: string }) {
     }
   }
 
+  async function applyPercentageAdjustment() {
+    const parsedPercentage = Number(percentage);
+    if (!Number.isFinite(parsedPercentage) || parsedPercentage <= -100 || parsedPercentage > 1_000) {
+      setError("Enter a percentage greater than -100 and no more than 1,000.");
+      return;
+    }
+    setAdjusting(true);
+    setError(null);
+    try {
+      const result = await apiJson<{ prices: PriceRow[] }>(`/api/clients/${clientId}/prices`, {
+        method: "POST",
+        body: JSON.stringify({ percentage: parsedPercentage }),
+      });
+      setPrices(new Map(result.prices.map((price) => [price.productId, price.price])));
+      setSaved(true);
+      setShowPercentageAdjustment(false);
+      setPercentage("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Price adjustment failed");
+    } finally {
+      setAdjusting(false);
+    }
+  }
+
   return (
     <section className="card-dashboard overflow-hidden p-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Product prices</h2>
-          <p className="text-xs text-muted-foreground">This client&apos;s current price per product — used to prefill invoices.</p>
+          <p className="text-xs text-muted-foreground">This client&apos;s current price per product — used to prefill invoices and adjust annually.</p>
         </div>
-        <button type="button" disabled={saving} className="btn-secondary h-9 px-3 text-xs" onClick={save}>
-          {saving ? "Saving…" : saved ? "Saved" : "Save prices"}
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" disabled={saving || adjusting || loading} className="btn-secondary h-9 px-3 text-xs" onClick={() => setShowPercentageAdjustment(true)}>
+            Annual % change
+          </button>
+          <button type="button" disabled={saving || adjusting} className="btn-secondary h-9 px-3 text-xs" onClick={save}>
+            {saving ? "Saving…" : saved ? "Saved" : "Save prices"}
+          </button>
+        </div>
       </div>
       {error ? <p className="px-4 py-3 text-sm text-destructive">{error}</p> : null}
       {loading ? (
@@ -239,6 +272,47 @@ function ProductPricesSection({ clientId }: { clientId: string }) {
           </table>
         </div>
       )}
+      {showPercentageAdjustment ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !adjusting) setShowPercentageAdjustment(false);
+          }}
+        >
+          <div className="card-dashboard my-8 w-full max-w-md space-y-5 p-6 shadow-[0_24px_64px_-12px_rgba(13,20,32,0.32)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold tracking-[-0.02em] text-foreground">Annual price change</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Apply the same percentage change to every saved product price for this client.</p>
+              </div>
+              <button type="button" disabled={adjusting} onClick={() => setShowPercentageAdjustment(false)} className="text-muted-foreground transition-colors hover:text-foreground" aria-label="Close">✕</button>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="client-price-percentage">Percentage change</label>
+              <div className="relative">
+                <input
+                  id="client-price-percentage"
+                  type="number"
+                  min="-99.99"
+                  max="1000"
+                  step="0.01"
+                  className="input-field pr-8"
+                  placeholder="e.g. 5 or -2.5"
+                  value={percentage}
+                  onChange={(e) => setPercentage(e.target.value)}
+                  disabled={adjusting}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+              </div>
+              <p className="helper-text mt-2">Use a positive number to increase prices and a negative number to reduce them.</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={adjusting} onClick={() => setShowPercentageAdjustment(false)} className="btn-secondary h-9 px-4 text-sm">Cancel</button>
+              <button type="button" disabled={adjusting} onClick={applyPercentageAdjustment} className="btn-primary h-9 px-4 text-sm">{adjusting ? "Applying…" : "Apply change"}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -273,8 +347,8 @@ function InvoiceHistorySection({ invoices }: { invoices: Invoice[] }) {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{new Date(inv.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${inv.paymentStatus === "PAID" ? "badge-paid" : "badge-unpaid"}`}>
-                      {inv.paymentStatus === "PAID" ? "Paid" : "Unpaid"}
+                    <span className={`badge ${inv.creditNote ? "badge-neutral" : inv.paymentStatus === "PAID" ? "badge-paid" : "badge-unpaid"}`}>
+                      {inv.creditNote ? "Credited" : inv.paymentStatus === "PAID" ? "Paid" : "Unpaid"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-medium tabular-nums">${inv.totalAmount}</td>
@@ -288,9 +362,9 @@ function InvoiceHistorySection({ invoices }: { invoices: Invoice[] }) {
   );
 }
 
-export function ClientDetailBody({ client, invoices }: { client: Client; invoices: Invoice[] }) {
+export function ClientDetailBody({ client, invoices, autoOpenEdit = false }: { client: Client; invoices: Invoice[]; autoOpenEdit?: boolean }) {
   const router = useRouter();
-  const [showEdit, setShowEdit] = useState(false);
+  const [showEdit, setShowEdit] = useState(autoOpenEdit);
 
   return (
     <div className="content-stack">
@@ -323,7 +397,10 @@ export function ClientDetailBody({ client, invoices }: { client: Client; invoice
       {showEdit ? (
         <EditClientModal
           client={client}
-          onClose={() => setShowEdit(false)}
+          onClose={() => {
+            setShowEdit(false);
+            if (autoOpenEdit) router.replace(`/clients/${client.id}`);
+          }}
           onDone={() => router.refresh()}
         />
       ) : null}

@@ -36,6 +36,7 @@ export default async function ClientsPage() {
                 <th className="px-4 py-3 text-right font-medium">Invoices</th>
                 <th className="px-4 py-3 text-right font-medium">Lifetime value</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -52,6 +53,10 @@ export default async function ClientsPage() {
                   <td className="px-4 py-3 text-right font-medium tabular-nums">${c.totalSpent}</td>
                   <td className="px-4 py-3">
                     <span className={`badge ${c.isActive ? "badge-paid" : "badge-neutral"}`}>{c.isActive ? "Active" : "Inactive"}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link href={`/clients/${c.id}`} className="mr-3 text-xs font-semibold text-primary hover:underline">View</Link>
+                    <Link href={`/clients/${c.id}?edit=1`} className="text-xs font-semibold text-primary hover:underline">Edit</Link>
                   </td>
                 </tr>
               ))}

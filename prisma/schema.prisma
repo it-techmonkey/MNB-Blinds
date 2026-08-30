@@ -1,17 +1,28 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  // Same as DATABASE_URL on local Postgres. On Neon: pooled URL in DATABASE_URL, unpooled (non-pooler host) here for migrations.
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 enum PaymentStatus {
   UNPAID
   PAID
+}
+
+enum StockAdjustmentType {
+  INCREASE
+  DECREASE
+}
+
+enum StockAdjustmentReason {
+  MISSING
+  FOUND
+  MISPLACED
+  COUNTING_ERROR
+  OTHER
 }
 
 model User {
@@ -36,6 +47,14 @@ model Product {
    */
   name        String
   /**
+   * The unit in which this product is stocked and sold, such as piece, box, or metre.
+   */
+  unit        String?
+  /**
+   * Optional clarification for the unit, such as "box of 100" or "5m roll".
+   */
+  unitDetail  String?  @map("unit_detail")
+  /**
    * Cost of the most recent restock batch — denormalized for quick display.
    */
   currentCost Decimal  @default(0) @map("current_cost") @db.Decimal(12, 2)
@@ -51,6 +70,7 @@ model Product {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   restocks     ProductRestock[]
+  stockAdjustments ProductStockAdjustment[]
   clientPrices ClientProductPrice[]
   invoiceItems InvoiceItem[]
 
@@ -73,6 +93,23 @@ model ProductRestock {
 
   @@index([productId])
   @@map("product_restocks")
+}
+
+/**
+ * A non-purchase correction to live stock, recorded separately from restock batches.
+ */
+model ProductStockAdjustment {
+  id        String                @id @default(cuid())
+  productId String                @map("product_id")
+  product   Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      StockAdjustmentType
+  quantity  Int
+  reason    StockAdjustmentReason
+  note      String?
+  createdAt DateTime              @default(now()) @map("created_at")
+
+  @@index([productId])
+  @@map("product_stock_adjustments")
 }
 
 model Client {
@@ -130,12 +167,30 @@ model Invoice {
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
-  items InvoiceItem[]
+  items      InvoiceItem[]
+  creditNote CreditNote?
 
   @@index([clientId])
   @@index([paymentStatus])
   @@index([createdAt])
   @@map("invoices")
+}
+
+/**
+ * A full reversal of one invoice. The original invoice is preserved for audit,
+ * while this record returns its quantities to stock and removes it from sales totals.
+ */
+model CreditNote {
+  id               String   @id @default(cuid())
+  creditNoteNumber String   @unique @map("credit_note_number")
+  invoiceId        String   @unique @map("invoice_id")
+  invoice          Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amount           Decimal  @db.Decimal(12, 2)
+  reason           String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("credit_notes")
 }
 
 model InvoiceItem {

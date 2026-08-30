@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 
 export type PaymentStatusFilter = "PAID" | "UNPAID";
@@ -68,7 +68,7 @@ export function buildReportQueryString(parsed: ParsedReportFilters): string {
 }
 
 function conditions(f: ReportFilters): Prisma.Sql[] {
-  const c: Prisma.Sql[] = [];
+  const c: Prisma.Sql[] = [Prisma.sql`NOT EXISTS (SELECT 1 FROM "credit_notes" cn WHERE cn."invoice_id" = i."id")`];
   if (f.from) c.push(Prisma.sql`i."created_at" >= ${f.from}`);
   if (f.toExclusive) c.push(Prisma.sql`i."created_at" < ${f.toExclusive}`);
   if (f.clientId) c.push(Prisma.sql`i."client_id" = ${f.clientId}`);

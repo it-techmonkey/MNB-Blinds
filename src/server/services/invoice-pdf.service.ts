@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import type { Invoice, InvoiceItem, Client } from "@prisma/client";
+import type { Invoice, InvoiceItem, Client } from "@/generated/prisma/client";
 import { formatDecimal } from "@/server/serialize";
 import { COMPANY_LETTERHEAD } from "@/lib/site";
 import { drawPdfLetterhead, drawPdfFooter, PDF_FOOTER_HEIGHT } from "@/server/services/pdf-layout";

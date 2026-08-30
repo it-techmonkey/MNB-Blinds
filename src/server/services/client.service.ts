@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { AppError, NotFoundError } from "@/server/errors";
 
@@ -30,6 +30,7 @@ export async function listClientsAdmin() {
   const clients = await prisma.client.findMany({ orderBy: { name: "asc" } });
   const agg = await prisma.invoice.groupBy({
     by: ["clientId"],
+    where: { creditNote: { is: null } },
     _count: true,
     _sum: { totalAmount: true },
   });
@@ -65,16 +66,31 @@ export async function createClient(input: {
   phone?: string;
   email?: string;
   address?: string;
+  prices?: { productId: string; price: number }[];
 }) {
   try {
-    return await prisma.client.create({
-      data: {
-        code: input.code,
-        name: input.name,
-        phone: input.phone?.trim() || null,
-        email: input.email?.trim() || null,
-        address: input.address?.trim() || null,
-      },
+    return await prisma.$transaction(async (tx) => {
+      const prices = input.prices ?? [];
+      const activeProductCount = await tx.product.count({ where: { isActive: true } });
+      const selectedActiveProductCount = prices.length > 0
+        ? await tx.product.count({ where: { id: { in: prices.map((p) => p.productId) }, isActive: true } })
+        : 0;
+      if (prices.length !== activeProductCount || selectedActiveProductCount !== activeProductCount) {
+        throw new AppError("Set a price for every active product before creating this client", 400, "INCOMPLETE_PRODUCT_PRICES");
+      }
+
+      return tx.client.create({
+        data: {
+          code: input.code,
+          name: input.name,
+          phone: input.phone?.trim() || null,
+          email: input.email?.trim() || null,
+          address: input.address?.trim() || null,
+          productPrices: prices.length > 0
+            ? { create: prices.map((p) => ({ productId: p.productId, price: new Prisma.Decimal(p.price) })) }
+            : undefined,
+        },
+      });
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -131,6 +147,26 @@ export async function setClientProductPrices(
   );
 }
 
+export async function adjustClientProductPrices(clientId: string, percentage: number) {
+  const client = await prisma.client.findUnique({ where: { id: clientId }, select: { id: true } });
+  if (!client) throw new NotFoundError("Client not found");
+
+  const multiplier = new Prisma.Decimal(1).add(new Prisma.Decimal(percentage).div(100));
+  const prices = await prisma.clientProductPrice.findMany({ where: { clientId }, select: { id: true, price: true } });
+  if (prices.length === 0) throw new AppError("This client has no product prices to adjust", 400, "NO_PRODUCT_PRICES");
+
+  await prisma.$transaction(
+    prices.map((row) =>
+      prisma.clientProductPrice.update({
+        where: { id: row.id },
+        data: { price: row.price.mul(multiplier).toDecimalPlaces(2) },
+      })
+    )
+  );
+
+  return getClientProductPrices(clientId);
+}
+
 export async function getClientInvoiceHistory(clientId: string) {
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) throw new NotFoundError("Client not found");
@@ -138,6 +174,6 @@ export async function getClientInvoiceHistory(clientId: string) {
   return prisma.invoice.findMany({
     where: { clientId },
     orderBy: { createdAt: "desc" },
-    include: { items: true },
+    include: { items: true, creditNote: true },
   });
 }

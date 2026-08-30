@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { InvoicePdfLink } from "@/components/InvoicePdfLink";
 import { PaymentStatusSelect } from "@/components/PaymentStatusSelect";
+import { PaymentStatusBadge } from "@/components/PaymentStatusBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { getSession } from "@/lib/auth/get-session";
 import { listAllInvoices } from "@/server/services/invoice.service";
@@ -27,8 +28,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const { data, pagination } = await listAllInvoices(page, 20);
   const rows = data.map(serializeInvoiceRow);
 
-  const totalValue = rows.reduce((sum, i) => sum + Number(i.totalAmount), 0);
-  const unpaidCount = rows.filter((i) => i.paymentStatus === "UNPAID").length;
+  const activeRows = rows.filter((i) => !i.isCredited);
+  const totalValue = activeRows.reduce((sum, i) => sum + Number(i.totalAmount), 0);
+  const unpaidCount = activeRows.filter((i) => i.paymentStatus === "UNPAID").length;
 
   const groups: { label: string; invoices: typeof rows }[] = [];
   for (const inv of rows) {
@@ -103,7 +105,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                         </td>
                         <td className="px-3 py-3 text-right font-semibold tabular-nums">${inv.totalAmount}</td>
                         <td className="px-3 py-3">
-                          <PaymentStatusSelect invoiceId={inv.id} current={inv.paymentStatus} compact />
+                          {inv.isCredited ? <PaymentStatusBadge status="CREDITED" /> : <PaymentStatusSelect invoiceId={inv.id} current={inv.paymentStatus} compact />}
                         </td>
                         <td className="px-3 py-3 text-right">
                           <Link href={`/invoices/${inv.id}`} className="text-xs font-semibold text-primary hover:underline">

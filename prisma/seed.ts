@@ -1,11 +1,9 @@
 import { loadEnvConfig } from "@next/env";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../src/lib/db";
 import bcrypt from "bcryptjs";
 
 // Match Next.js so seed uses the same DATABASE_URL / ADMIN_* as `next dev` (.env.local overrides .env).
 loadEnvConfig(process.cwd());
-
-const prisma = new PrismaClient();
 
 async function main() {
   const adminName = (process.env.ADMIN_NAME ?? "Admin").trim();

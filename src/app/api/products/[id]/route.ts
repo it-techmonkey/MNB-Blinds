@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { productUpdateSchema } from "@/server/validation/schemas";
-import { updateProduct, getProductById, getProductRestocks, serializeProduct } from "@/server/services/product.service";
+import { updateProduct, getProductById, getProductRestocks, getProductStockAdjustments, serializeProduct } from "@/server/services/product.service";
 import { requireAuth } from "@/lib/auth/api";
 import { jsonError, jsonOk } from "@/lib/http";
 import { AppError } from "@/server/errors";
@@ -12,8 +12,8 @@ export async function GET(request: NextRequest, context: Ctx) {
   try {
     await requireAuth(request);
     const { id } = await context.params;
-    const [product, restocks] = await Promise.all([getProductById(id), getProductRestocks(id)]);
-    return jsonOk({ product, restocks });
+    const [product, restocks, stockAdjustments] = await Promise.all([getProductById(id), getProductRestocks(id), getProductStockAdjustments(id)]);
+    return jsonOk({ product, restocks, stockAdjustments });
   } catch (e) {
     if (e instanceof AppError) {
       return jsonError(e.message, e.statusCode);

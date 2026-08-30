@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { InvoicePdfLink } from "@/components/InvoicePdfLink";
 import { PaymentStatusBadge } from "@/components/PaymentStatusBadge";
 import { PaymentStatusSelect } from "@/components/PaymentStatusSelect";
+import { IssueCreditNoteButton } from "@/components/IssueCreditNoteButton";
 import { PageHeader } from "@/components/PageHeader";
 import { getSession } from "@/lib/auth/get-session";
 import { getInvoiceById } from "@/server/services/invoice.service";
@@ -54,11 +55,19 @@ export default async function InvoiceDetailPage({ params }: Props) {
         <div className="stat-card">
           <p className="stat-label">Payment</p>
           <div className="mt-2">
-            <PaymentStatusBadge status={s.paymentStatus} />
+            <PaymentStatusBadge status={s.isCredited ? "CREDITED" : s.paymentStatus} />
           </div>
-          <div className="mt-3">
-            <PaymentStatusSelect invoiceId={s.id} current={s.paymentStatus} compact />
-          </div>
+          {s.isCredited ? (
+            <div className="mt-3 text-xs text-muted-foreground">
+              <p>Credit note {s.creditNote?.creditNoteNumber} · ${s.creditNote?.amount}</p>
+              <p>Issued {s.creditNote ? new Date(s.creditNote.createdAt).toLocaleString() : ""}</p>
+              {s.creditNote?.reason ? <p className="mt-1">Reason: {s.creditNote.reason}</p> : null}
+            </div>
+          ) : (
+            <div className="mt-3">
+              <PaymentStatusSelect invoiceId={s.id} current={s.paymentStatus} compact />
+            </div>
+          )}
         </div>
         <div className="stat-card">
           <p className="stat-label">Total</p>
@@ -66,6 +75,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
           <InvoicePdfLink invoiceId={s.id} variant="button" className="btn-ink mt-3 h-10 w-full">
             Invoice PDF
           </InvoicePdfLink>
+          {!s.isCredited ? <div className="mt-3"><IssueCreditNoteButton invoiceId={s.id} /></div> : null}
         </div>
       </section>
 

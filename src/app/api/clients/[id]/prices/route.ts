@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { clientProductPricesSchema } from "@/server/validation/schemas";
-import { getClientProductPrices, setClientProductPrices } from "@/server/services/client.service";
+import { clientProductPriceAdjustmentSchema, clientProductPricesSchema } from "@/server/validation/schemas";
+import { adjustClientProductPrices, getClientProductPrices, setClientProductPrices } from "@/server/services/client.service";
 import { requireAuth } from "@/lib/auth/api";
 import { jsonError, jsonOk } from "@/lib/http";
 import { AppError } from "@/server/errors";
@@ -38,6 +38,21 @@ export async function PUT(request: NextRequest, context: Ctx) {
     if (e instanceof AppError) {
       return jsonError(e.message, e.statusCode);
     }
+    console.error(e);
+    return jsonError("Internal server error", 500);
+  }
+}
+
+export async function POST(request: NextRequest, context: Ctx) {
+  try {
+    await requireAuth(request);
+    const { id } = await context.params;
+    const { percentage } = clientProductPriceAdjustmentSchema.parse(await request.json());
+    const prices = await adjustClientProductPrices(id, percentage);
+    return jsonOk({ prices });
+  } catch (e) {
+    if (e instanceof ZodError) return jsonError("Validation failed", 400, e.flatten());
+    if (e instanceof AppError) return jsonError(e.message, e.statusCode);
     console.error(e);
     return jsonError("Internal server error", 500);
   }

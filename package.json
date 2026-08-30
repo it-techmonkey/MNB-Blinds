@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
-    "@prisma/adapter-neon": "6.19.3",
-    "@prisma/client": "^6.19.0",
+    "@prisma/adapter-neon": "7.10.0",
+    "@prisma/client": "7.10.0",
     "bcryptjs": "^3.0.2",
     "bufferutil": "^4.1.0",
     "jose": "^6.1.0",
-    "next": "^15.5.4",
+    "next": "^16.3.3",
     "pdfkit": "^0.17.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
@@ -38,14 +38,12 @@
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
     "@types/ws": "^8.18.1",
+    "dotenv": "^17.3.1",
     "eslint": "^9.36.0",
-    "eslint-config-next": "^15.5.4",
-    "prisma": "^6.19.0",
+    "eslint-config-next": "^16.3.3",
+    "prisma": "7.10.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   }
 }

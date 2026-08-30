@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { AppError, NotFoundError } from "@/server/errors";
 import { formatDecimal } from "@/server/serialize";
@@ -7,6 +7,8 @@ export function serializeProduct(p: {
   id: string;
   code: string;
   name: string;
+  unit: string | null;
+  unitDetail: string | null;
   currentCost: Prisma.Decimal;
   stock: number;
   isActive: boolean;
@@ -17,6 +19,8 @@ export function serializeProduct(p: {
     id: p.id,
     code: p.code,
     name: p.name,
+    unit: p.unit,
+    unitDetail: p.unitDetail,
     currentCost: formatDecimal(p.currentCost),
     stock: p.stock,
     isActive: p.isActive,
@@ -38,6 +42,24 @@ export function serializeRestock(r: {
     costPerUnit: formatDecimal(r.costPerUnit),
     purchasedAt: r.purchasedAt.toISOString(),
     note: r.note,
+  };
+}
+
+export function serializeStockAdjustment(a: {
+  id: string;
+  type: "INCREASE" | "DECREASE";
+  quantity: number;
+  reason: "MISSING" | "FOUND" | "MISPLACED" | "COUNTING_ERROR" | "OTHER";
+  note: string | null;
+  createdAt: Date;
+}) {
+  return {
+    id: a.id,
+    type: a.type,
+    quantity: a.quantity,
+    reason: a.reason,
+    note: a.note,
+    createdAt: a.createdAt.toISOString(),
   };
 }
 
@@ -79,11 +101,22 @@ export async function getProductRestocks(productId: string) {
   return rows.map(serializeRestock);
 }
 
+export async function getProductStockAdjustments(productId: string) {
+  const rows = await prisma.productStockAdjustment.findMany({
+    where: { productId },
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(serializeStockAdjustment);
+}
+
 export async function createProduct(input: {
   code: string;
   name: string;
+  unit: string;
+  unitDetail?: string;
   openingStock: number;
   openingCost: number;
+  purchaseCostNote?: string;
 }) {
   try {
     return await prisma.$transaction(async (tx) => {
@@ -91,6 +124,8 @@ export async function createProduct(input: {
         data: {
           code: input.code,
           name: input.name,
+          unit: input.unit,
+          unitDetail: input.unitDetail?.trim() || null,
           stock: input.openingStock,
           currentCost: new Prisma.Decimal(input.openingCost),
         },
@@ -101,7 +136,7 @@ export async function createProduct(input: {
             productId: product.id,
             quantity: input.openingStock,
             costPerUnit: new Prisma.Decimal(input.openingCost),
-            note: "Opening stock",
+            note: input.purchaseCostNote?.trim() || "Opening stock",
           },
         });
       }
@@ -115,13 +150,18 @@ export async function createProduct(input: {
   }
 }
 
-export async function updateProduct(id: string, patch: { code?: string; name?: string; isActive?: boolean }) {
+export async function updateProduct(
+  id: string,
+  patch: { code?: string; name?: string; unit?: string | null; unitDetail?: string | null; isActive?: boolean }
+) {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new NotFoundError("Product not found");
 
   const data: Prisma.ProductUpdateInput = {};
   if (patch.code !== undefined) data.code = patch.code;
   if (patch.name !== undefined) data.name = patch.name;
+  if (patch.unit !== undefined) data.unit = patch.unit?.trim() || null;
+  if (patch.unitDetail !== undefined) data.unitDetail = patch.unitDetail?.trim() || null;
   if (patch.isActive !== undefined) data.isActive = patch.isActive;
 
   if (Object.keys(data).length === 0) {
@@ -159,6 +199,39 @@ export async function restockProduct(
       data: {
         stock: { increment: input.quantity },
         currentCost: new Prisma.Decimal(input.costPerUnit),
+      },
+    });
+  });
+}
+
+export async function adjustProductStock(
+  productId: string,
+  input: {
+    type: "INCREASE" | "DECREASE";
+    quantity: number;
+    reason: "MISSING" | "FOUND" | "MISPLACED" | "COUNTING_ERROR" | "OTHER";
+    note?: string;
+  }
+) {
+  const existing = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } });
+  if (!existing) throw new NotFoundError("Product not found");
+
+  return prisma.$transaction(async (tx) => {
+    const update = await tx.product.updateMany({
+      where: input.type === "DECREASE" ? { id: productId, stock: { gte: input.quantity } } : { id: productId },
+      data: input.type === "DECREASE" ? { stock: { decrement: input.quantity } } : { stock: { increment: input.quantity } },
+    });
+    if (update.count !== 1) {
+      throw new AppError("This adjustment would take stock below zero", 409, "INSUFFICIENT_STOCK");
+    }
+
+    return tx.productStockAdjustment.create({
+      data: {
+        productId,
+        type: input.type,
+        quantity: input.quantity,
+        reason: input.reason,
+        note: input.note?.trim() || null,
       },
     });
   });
@@ -216,7 +289,7 @@ export async function getDashboardStats() {
     prisma.product.count({ where: { isActive: true } }),
     prisma.product.aggregate({ _sum: { stock: true } }),
     prisma.invoice.aggregate({
-      where: { paymentStatus: "UNPAID" },
+      where: { paymentStatus: "UNPAID", creditNote: { is: null } },
       _sum: { totalAmount: true },
       _count: true,
     }),
@@ -225,7 +298,7 @@ export async function getDashboardStats() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthAgg = await prisma.invoiceItem.aggregate({
-    where: { invoice: { createdAt: { gte: monthStart } } },
+    where: { invoice: { createdAt: { gte: monthStart }, creditNote: { is: null } } },
     _sum: { quantity: true, total: true },
   });
 
@@ -259,6 +332,7 @@ export async function getMonthlySales(): Promise<MonthlySalesRow[]> {
       SUM(ii."total") AS revenue
     FROM "invoice_items" ii
     JOIN "invoices" i ON i."id" = ii."invoice_id"
+    WHERE NOT EXISTS (SELECT 1 FROM "credit_notes" cn WHERE cn."invoice_id" = i."id")
     GROUP BY DATE_TRUNC('month', i."created_at"), ii."product_id"
     ORDER BY month DESC
   `;
