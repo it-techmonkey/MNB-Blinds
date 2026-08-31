@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { getSession } from "@/lib/auth/get-session";
 import { getMonthlySales } from "@/server/services/product.service";
@@ -7,24 +8,38 @@ function monthLabel(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-export default async function MonthlySalesReportPage() {
+type SortField = "code" | "product" | "units" | "revenue";
+type SortDirection = "asc" | "desc";
+function isSortField(value: string | undefined): value is SortField { return value === "code" || value === "product" || value === "units" || value === "revenue"; }
+function SortHeader({ field, label, activeField, direction }: { field: SortField; label: string; activeField: SortField; direction: SortDirection }) {
+  const active = field === activeField;
+  const next: SortDirection = active && direction === "asc" ? "desc" : "asc";
+  return <Link href={`/reports/monthly-sales?sort=${field}&direction=${next}`} className="inline-flex items-center gap-1 font-medium hover:text-foreground">{label}<span aria-hidden="true">{active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></Link>;
+}
+
+export default async function MonthlySalesReportPage({ searchParams }: { searchParams: Promise<{ sort?: string; direction?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const rows = await getMonthlySales();
+  const query = await searchParams;
+  const sort = isSortField(query.sort) ? query.sort : "units";
+  const direction: SortDirection = query.direction === "asc" ? "asc" : "desc";
+  const rows = (await getMonthlySales()).sort((a, b) => {
+    const left = sort === "code" ? a.productCode : sort === "product" ? a.productName : sort === "units" ? a.unitsSold : Number(a.revenue);
+    const right = sort === "code" ? b.productCode : sort === "product" ? b.productName : sort === "units" ? b.unitsSold : Number(b.revenue);
+    const comparison = typeof left === "string" ? left.localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" }) : left - Number(right);
+    return direction === "asc" ? comparison : -comparison;
+  });
   const totalUnits = rows.reduce((sum, r) => sum + r.unitsSold, 0);
   const totalRevenue = rows.reduce((sum, r) => sum + Number(r.revenue), 0);
 
-  const groups: { label: string; rows: typeof rows }[] = [];
+  const groupsByLabel = new Map<string, typeof rows>();
   for (const r of rows) {
     const label = monthLabel(r.month);
-    const last = groups[groups.length - 1];
-    if (last && last.label === label) last.rows.push(r);
-    else groups.push({ label, rows: [r] });
+    const group = groupsByLabel.get(label);
+    if (group) group.push(r); else groupsByLabel.set(label, [r]);
   }
-  for (const g of groups) {
-    g.rows.sort((a, b) => b.unitsSold - a.unitsSold);
-  }
+  const groups = Array.from(groupsByLabel, ([label, monthRows]) => ({ label, rows: monthRows }));
 
   return (
     <div className="content-stack">
@@ -53,16 +68,16 @@ export default async function MonthlySalesReportPage() {
             <section key={group.label} className="card-dashboard overflow-hidden p-0">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <h2 className="text-sm font-semibold text-foreground">{group.label}</h2>
-                <span className="text-xs text-muted-foreground">Sorted by units sold</span>
+                <span className="text-xs text-muted-foreground">Select a column to sort</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-150 text-sm">
                   <thead>
                     <tr className="table-head">
-                      <th className="px-4 py-3 font-medium">Code</th>
-                      <th className="px-4 py-3 font-medium">Product</th>
-                      <th className="px-4 py-3 text-right font-medium">Units sold</th>
-                      <th className="px-4 py-3 text-right font-medium">Revenue</th>
+                      <th className="px-4 py-3"><SortHeader field="code" label="Code" activeField={sort} direction={direction} /></th>
+                      <th className="px-4 py-3"><SortHeader field="product" label="Product" activeField={sort} direction={direction} /></th>
+                      <th className="px-4 py-3 text-right"><SortHeader field="units" label="Units sold" activeField={sort} direction={direction} /></th>
+                      <th className="px-4 py-3 text-right"><SortHeader field="revenue" label="Revenue" activeField={sort} direction={direction} /></th>
                     </tr>
                   </thead>
                   <tbody>

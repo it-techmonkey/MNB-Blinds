@@ -19,26 +19,47 @@ function dateLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
 }
 
-export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+type SortField = "client" | "number" | "time" | "total";
+type SortDirection = "asc" | "desc";
+
+function isSortField(value: string | undefined): value is SortField {
+  return value === "client" || value === "number" || value === "time" || value === "total";
+}
+
+function SortHeader({ field, label, activeField, direction }: { field: SortField; label: string; activeField: SortField; direction: SortDirection }) {
+  const active = field === activeField;
+  const nextDirection: SortDirection = active && direction === "asc" ? "desc" : "asc";
+  return <Link href={`/invoices?sort=${field}&direction=${nextDirection}`} className="inline-flex items-center gap-1 font-medium hover:text-foreground">{label}<span aria-hidden="true">{active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></Link>;
+}
+
+export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ page?: string; sort?: string; direction?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const { data, pagination } = await listAllInvoices(page, 20);
-  const rows = data.map(serializeInvoiceRow);
+  const sort = isSortField(sp.sort) ? sp.sort : "time";
+  const direction: SortDirection = sp.direction === "asc" ? "asc" : "desc";
+  const rows = data.map(serializeInvoiceRow).sort((a, b) => {
+    const left = sort === "client" ? a.clientName : sort === "number" ? a.invoiceNumber : sort === "total" ? Number(a.totalAmount) : new Date(a.createdAt).getTime();
+    const right = sort === "client" ? b.clientName : sort === "number" ? b.invoiceNumber : sort === "total" ? Number(b.totalAmount) : new Date(b.createdAt).getTime();
+    const comparison = typeof left === "string" ? left.localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" }) : left - Number(right);
+    return direction === "asc" ? comparison : -comparison;
+  });
 
   const activeRows = rows.filter((i) => !i.isCredited);
   const totalValue = activeRows.reduce((sum, i) => sum + Number(i.totalAmount), 0);
   const unpaidCount = activeRows.filter((i) => i.paymentStatus === "UNPAID").length;
 
-  const groups: { label: string; invoices: typeof rows }[] = [];
+  const groupsByLabel = new Map<string, typeof rows>();
   for (const inv of rows) {
     const label = dateLabel(inv.createdAt);
-    const last = groups[groups.length - 1];
-    if (last && last.label === label) last.invoices.push(inv);
-    else groups.push({ label, invoices: [inv] });
+    const group = groupsByLabel.get(label);
+    if (group) group.push(inv);
+    else groupsByLabel.set(label, [inv]);
   }
+  const groups = Array.from(groupsByLabel, ([label, invoices]) => ({ label, invoices }));
 
   return (
     <div className="content-stack">
@@ -82,10 +103,10 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                 <table className="w-full min-w-225 text-sm">
                   <thead>
                     <tr className="table-head">
-                      <th className="px-3 py-3 font-medium">Client</th>
-                      <th className="px-3 py-3 font-medium">Invoice #</th>
-                      <th className="px-3 py-3 font-medium">Time</th>
-                      <th className="px-3 py-3 text-right font-medium">Total</th>
+                      <th className="px-3 py-3"><SortHeader field="client" label="Client" activeField={sort} direction={direction} /></th>
+                      <th className="px-3 py-3"><SortHeader field="number" label="Invoice #" activeField={sort} direction={direction} /></th>
+                      <th className="px-3 py-3"><SortHeader field="time" label="Time" activeField={sort} direction={direction} /></th>
+                      <th className="px-3 py-3 text-right"><SortHeader field="total" label="Total" activeField={sort} direction={direction} /></th>
                       <th className="px-3 py-3 font-medium">Payment</th>
                       <th className="px-3 py-3 text-right font-medium">View</th>
                       <th className="px-3 py-3 text-right font-medium">PDF</th>

@@ -4,11 +4,32 @@ import { getSession } from "@/lib/auth/get-session";
 import { listClientsAdmin } from "@/server/services/client.service";
 import { redirect } from "next/navigation";
 
-export default async function ClientsPage() {
+type SortField = "code" | "name" | "invoices" | "value";
+type SortDirection = "asc" | "desc";
+
+function isSortField(value: string | undefined): value is SortField {
+  return value === "code" || value === "name" || value === "invoices" || value === "value";
+}
+
+function SortHeader({ field, label, activeField, direction }: { field: SortField; label: string; activeField: SortField; direction: SortDirection }) {
+  const active = field === activeField;
+  const nextDirection: SortDirection = active && direction === "asc" ? "desc" : "asc";
+  return <Link href={`/clients?sort=${field}&direction=${nextDirection}`} className="inline-flex items-center gap-1 font-medium hover:text-foreground">{label}<span aria-hidden="true">{active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></Link>;
+}
+
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ sort?: string; direction?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const clients = await listClientsAdmin();
+  const query = await searchParams;
+  const sort = isSortField(query.sort) ? query.sort : "name";
+  const direction: SortDirection = query.direction === "desc" ? "desc" : "asc";
+  const clients = [...await listClientsAdmin()].sort((a, b) => {
+    const left = sort === "code" ? a.code : sort === "name" ? a.name : sort === "invoices" ? a.invoiceCount : Number(a.totalSpent);
+    const right = sort === "code" ? b.code : sort === "name" ? b.name : sort === "invoices" ? b.invoiceCount : Number(b.totalSpent);
+    const comparison = typeof left === "string" ? left.localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" }) : left - Number(right);
+    return direction === "asc" ? comparison : -comparison;
+  });
 
   return (
     <div className="content-stack">
@@ -30,11 +51,11 @@ export default async function ClientsPage() {
           <table className="w-full min-w-175 text-sm">
             <thead>
               <tr className="table-head">
-                <th className="px-4 py-3 font-medium">Code</th>
-                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3"><SortHeader field="code" label="Code" activeField={sort} direction={direction} /></th>
+                <th className="px-4 py-3"><SortHeader field="name" label="Name" activeField={sort} direction={direction} /></th>
                 <th className="px-4 py-3 font-medium">Contact</th>
-                <th className="px-4 py-3 text-right font-medium">Invoices</th>
-                <th className="px-4 py-3 text-right font-medium">Lifetime value</th>
+                <th className="px-4 py-3 text-right"><SortHeader field="invoices" label="Invoices" activeField={sort} direction={direction} /></th>
+                <th className="px-4 py-3 text-right"><SortHeader field="value" label="Lifetime value" activeField={sort} direction={direction} /></th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
