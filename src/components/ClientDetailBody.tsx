@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiJson } from "@/lib/api-client";
 
@@ -26,6 +26,7 @@ type Invoice = {
 
 type Product = { id: string; code: string; name: string; isActive: boolean };
 type PriceRow = { productId: string; price: string };
+type PriceSortKey = "code" | "name" | "price";
 
 function EditClientModal({ client, onClose, onDone }: { client: Client; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState(client.name);
@@ -128,6 +129,8 @@ function EditClientModal({ client, onClose, onDone }: { client: Client; onClose:
 function ProductPricesSection({ clientId }: { clientId: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [prices, setPrices] = useState<Map<string, string>>(new Map());
+  const [sort, setSort] = useState<PriceSortKey>("name");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +169,22 @@ function ProductPricesSection({ clientId }: { clientId: string }) {
       else next.set(productId, value);
       return next;
     });
+  }
+
+  const sortedProducts = useMemo(() => [...products].sort((a, b) => {
+    const left = sort === "code" ? a.code : sort === "name" ? a.name : Number(prices.get(a.id) ?? -1);
+    const right = sort === "code" ? b.code : sort === "name" ? b.name : Number(prices.get(b.id) ?? -1);
+    const comparison = typeof left === "string" ? left.localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" }) : left - Number(right);
+    return direction === "asc" ? comparison : -comparison;
+  }), [products, prices, sort, direction]);
+
+  function toggleSort(key: PriceSortKey) {
+    if (sort === key) setDirection((value) => value === "asc" ? "desc" : "asc");
+    else { setSort(key); setDirection("asc"); }
+  }
+
+  function sortableHeader(key: PriceSortKey, label: string) {
+    return <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-medium hover:text-foreground">{label}<span aria-hidden="true">{sort === key ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></button>;
   }
 
   async function save() {
@@ -241,13 +260,13 @@ function ProductPricesSection({ clientId }: { clientId: string }) {
           <table className="w-full min-w-125 text-sm">
             <thead>
               <tr className="table-head">
-                <th className="px-4 py-3 font-medium">Code</th>
-                <th className="px-4 py-3 font-medium">Product</th>
-                <th className="px-4 py-3 text-right font-medium">Price</th>
+                <th className="px-4 py-3">{sortableHeader("code", "Code")}</th>
+                <th className="px-4 py-3">{sortableHeader("name", "Product")}</th>
+                <th className="px-4 py-3 text-right">{sortableHeader("price", "Price")}</th>
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {sortedProducts.map((p) => (
                 <tr key={p.id} className="table-row">
                   <td className="px-4 py-3 text-muted-foreground">{p.code}</td>
                   <td className="px-4 py-3 font-medium text-foreground">{p.name}</td>

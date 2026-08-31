@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiJson } from "@/lib/api-client";
 
 type ClientRow = { id: string; code: string; name: string };
 type ProductRow = { id: string; code: string; name: string; stock: number };
 type PriceRow = { productId: string; price: string };
+type SortKey = "code" | "name" | "price";
 
 export function NewInvoiceClient() {
   const router = useRouter();
@@ -17,6 +18,8 @@ export function NewInvoiceClient() {
   const [clientPrices, setClientPrices] = useState<Map<string, string>>(new Map());
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<SortKey>("name");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +76,22 @@ export function NewInvoiceClient() {
     if (!nextClientId) setClientPrices(new Map());
   }
 
-  function priceFor(productId: string): string {
-    return prices[productId] ?? clientPrices.get(productId) ?? "";
+  const priceFor = useCallback((productId: string): string => prices[productId] ?? clientPrices.get(productId) ?? "", [prices, clientPrices]);
+
+  const sortedProducts = useMemo(() => [...products].sort((a, b) => {
+    const left = sort === "code" ? a.code : sort === "name" ? a.name : Number(priceFor(a.id) || -1);
+    const right = sort === "code" ? b.code : sort === "name" ? b.name : Number(priceFor(b.id) || -1);
+    const comparison = typeof left === "string" ? left.localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" }) : left - Number(right);
+    return direction === "asc" ? comparison : -comparison;
+  }), [products, priceFor, sort, direction]);
+
+  function toggleSort(key: SortKey) {
+    if (sort === key) setDirection((value) => value === "asc" ? "desc" : "asc");
+    else { setSort(key); setDirection("asc"); }
+  }
+
+  function sortableHeader(key: SortKey, label: string) {
+    return <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-medium hover:text-foreground">{label}<span aria-hidden="true">{sort === key ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></button>;
   }
 
   const lines = useMemo(() => {
@@ -165,16 +182,16 @@ export function NewInvoiceClient() {
             <table className="w-full min-w-175 text-sm">
               <thead>
                 <tr className="table-head">
-                  <th className="px-4 py-3 font-medium">Code</th>
-                  <th className="px-4 py-3 font-medium">Product</th>
+                  <th className="px-4 py-3">{sortableHeader("code", "Code")}</th>
+                  <th className="px-4 py-3">{sortableHeader("name", "Product")}</th>
                   <th className="px-4 py-3 text-right font-medium">Stock</th>
                   <th className="px-4 py-3 text-right font-medium">Qty</th>
-                  <th className="px-4 py-3 text-right font-medium">Price</th>
+                  <th className="px-4 py-3 text-right">{sortableHeader("price", "Price")}</th>
                   <th className="px-4 py-3 text-right font-medium">Line total</th>
                 </tr>
               </thead>
               <tbody>
-                {products.map((p) => {
+                {sortedProducts.map((p) => {
                   const qty = Number(quantities[p.id] ?? 0);
                   const price = parseFloat(priceFor(p.id));
                   const lineTotal = qty > 0 && !isNaN(price) ? qty * price : 0;

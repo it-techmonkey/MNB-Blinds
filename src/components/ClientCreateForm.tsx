@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "@/lib/api-client";
 
 type Product = { id: string; code: string; name: string };
+type SortKey = "code" | "name" | "price";
 
 export function ClientCreateForm() {
   const router = useRouter();
@@ -15,6 +16,8 @@ export function ClientCreateForm() {
   const [address, setAddress] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<SortKey>("name");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [productsLoading, setProductsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,6 +43,22 @@ export function ClientCreateForm() {
     setPrices((current) => ({ ...current, [productId]: value }));
   }
 
+  const sortedProducts = useMemo(() => [...products].sort((a, b) => {
+    const left = sort === "code" ? a.code : sort === "name" ? a.name : Number(prices[a.id] ?? -1);
+    const right = sort === "code" ? b.code : sort === "name" ? b.name : Number(prices[b.id] ?? -1);
+    const comparison = typeof left === "string" ? left.localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" }) : left - Number(right);
+    return direction === "asc" ? comparison : -comparison;
+  }), [products, prices, sort, direction]);
+
+  function toggleSort(key: SortKey) {
+    if (sort === key) setDirection((value) => value === "asc" ? "desc" : "asc");
+    else { setSort(key); setDirection("asc"); }
+  }
+
+  function sortableHeader(key: SortKey, label: string) {
+    return <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-medium hover:text-foreground">{label}<span aria-hidden="true">{sort === key ? (direction === "asc" ? "↑" : "↓") : "↕"}</span></button>;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -47,9 +66,11 @@ export function ClientCreateForm() {
       setError("Wait for the product price list to load.");
       return;
     }
-    const priceRows = products.map((product) => ({ productId: product.id, rawPrice: prices[product.id]?.trim() ?? "" }));
-    if (priceRows.some((row) => row.rawPrice === "" || !Number.isFinite(Number(row.rawPrice)) || Number(row.rawPrice) < 0)) {
-      setError("Enter a valid price for every active product.");
+    const priceRows = products
+      .map((product) => ({ productId: product.id, rawPrice: prices[product.id]?.trim() ?? "" }))
+      .filter((row) => row.rawPrice !== "");
+    if (priceRows.some((row) => !Number.isFinite(Number(row.rawPrice)) || Number(row.rawPrice) < 0)) {
+      setError("Enter a valid price for each product you choose to price.");
       return;
     }
     setLoading(true);
@@ -124,7 +145,7 @@ export function ClientCreateForm() {
       <section className="overflow-hidden rounded-xl border border-border">
         <div className="border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">Product prices</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Set this client&apos;s standard price for every active product. You can update these later.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Optional: set prices only for products this client buys. You can add or change prices later.</p>
         </div>
         {productsLoading ? (
           <div className="space-y-2 p-4">
@@ -137,13 +158,13 @@ export function ClientCreateForm() {
             <table className="w-full min-w-125 text-sm">
               <thead className="sticky top-0 bg-card">
                 <tr className="table-head">
-                  <th className="px-4 py-3 font-medium">Code</th>
-                  <th className="px-4 py-3 font-medium">Product</th>
-                  <th className="px-4 py-3 text-right font-medium">Price</th>
+                  <th className="px-4 py-3">{sortableHeader("code", "Code")}</th>
+                  <th className="px-4 py-3">{sortableHeader("name", "Product")}</th>
+                  <th className="px-4 py-3 text-right">{sortableHeader("price", "Price")}</th>
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
+                {sortedProducts.map((product) => (
                   <tr key={product.id} className="table-row">
                     <td className="px-4 py-3 text-muted-foreground">{product.code}</td>
                     <td className="px-4 py-3 font-medium text-foreground">{product.name}</td>
@@ -154,7 +175,6 @@ export function ClientCreateForm() {
                           type="number"
                           min="0"
                           step="0.01"
-                          required
                           className="input-field-sm h-8 w-full pl-5 text-right text-xs"
                           value={prices[product.id] ?? ""}
                           onChange={(e) => setProductPrice(product.id, e.target.value)}

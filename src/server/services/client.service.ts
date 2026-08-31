@@ -71,12 +71,11 @@ export async function createClient(input: {
   try {
     return await prisma.$transaction(async (tx) => {
       const prices = input.prices ?? [];
-      const activeProductCount = await tx.product.count({ where: { isActive: true } });
       const selectedActiveProductCount = prices.length > 0
         ? await tx.product.count({ where: { id: { in: prices.map((p) => p.productId) }, isActive: true } })
         : 0;
-      if (prices.length !== activeProductCount || selectedActiveProductCount !== activeProductCount) {
-        throw new AppError("Set a price for every active product before creating this client", 400, "INCOMPLETE_PRODUCT_PRICES");
+      if (selectedActiveProductCount !== prices.length) {
+        throw new AppError("Prices can only be set for active products", 400, "INVALID_PRODUCT_PRICES");
       }
 
       return tx.client.create({
