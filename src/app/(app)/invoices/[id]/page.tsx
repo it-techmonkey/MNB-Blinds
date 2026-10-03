@@ -87,7 +87,8 @@ export default async function InvoiceDetailPage({ params }: Props) {
               <th className="px-4 py-2.5 font-medium">Product</th>
               <th className="px-4 py-2.5 text-right font-medium">Stock left</th>
               <th className="px-4 py-2.5 text-right font-medium">Qty</th>
-              <th className="px-4 py-2.5 text-right font-medium">Price</th>
+              <th className="px-4 py-2.5 font-medium">Unit</th>
+              <th className="px-4 py-2.5 text-right font-medium">Price per unit</th>
               <th className="px-4 py-2.5 text-right font-medium">Line total</th>
             </tr>
           </thead>
@@ -98,6 +99,7 @@ export default async function InvoiceDetailPage({ params }: Props) {
                 <td className="px-4 py-2.5">{i.productName}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{i.stockOnHand ?? "—"}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{i.quantity}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{i.unit}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">${i.price}</td>
                 <td className="px-4 py-2.5 text-right font-medium tabular-nums">${i.total}</td>
               </tr>

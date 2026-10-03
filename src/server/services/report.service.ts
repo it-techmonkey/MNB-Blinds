@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { formatUnit } from "@/server/serialize";
 
 export type PaymentStatusFilter = "PAID" | "UNPAID";
 export type Granularity = "day" | "month" | "year";
@@ -158,6 +159,7 @@ export type ProductBreakdownRow = {
   productId: string;
   productCode: string;
   productName: string;
+  unit: string;
   unitsSold: number;
   revenue: string;
   cost: string;
@@ -172,6 +174,8 @@ export async function getProductBreakdown(f: ReportFilters, limit = 25): Promise
       productId: string;
       productCode: string;
       productName: string;
+      unitSnapshot: string | null;
+      unitDetailSnapshot: string | null;
       unitsSold: bigint;
       revenue: Prisma.Decimal;
       cost: Prisma.Decimal;
@@ -181,6 +185,8 @@ export async function getProductBreakdown(f: ReportFilters, limit = 25): Promise
     SELECT ii."product_id" AS "productId",
       MAX(ii."product_code_snapshot") AS "productCode",
       MAX(ii."product_name_snapshot") AS "productName",
+      ii."unit_snapshot" AS "unitSnapshot",
+      ii."unit_detail_snapshot" AS "unitDetailSnapshot",
       SUM(ii."quantity")::bigint AS "unitsSold",
       SUM(ii."total") AS revenue,
       SUM(ii."quantity" * p."current_cost") AS cost,
@@ -189,7 +195,7 @@ export async function getProductBreakdown(f: ReportFilters, limit = 25): Promise
     JOIN "invoices" i ON i."id" = ii."invoice_id"
     JOIN "products" p ON p."id" = ii."product_id"
     WHERE ${whereSql(f)}
-    GROUP BY ii."product_id"
+    GROUP BY ii."product_id", ii."unit_snapshot", ii."unit_detail_snapshot"
     ORDER BY revenue DESC
     LIMIT ${limit}
   `;
@@ -199,6 +205,7 @@ export async function getProductBreakdown(f: ReportFilters, limit = 25): Promise
       productId: r.productId,
       productCode: r.productCode,
       productName: r.productName,
+      unit: formatUnit(r.unitSnapshot, r.unitDetailSnapshot),
       unitsSold: Number(r.unitsSold),
       revenue: r.revenue.toFixed(2),
       cost: r.cost.toFixed(2),
@@ -277,6 +284,7 @@ export type ReportDetailRow = {
   productCode: string;
   productName: string;
   quantity: number;
+  unit: string;
   price: string;
   total: string;
   cost: string;
@@ -295,6 +303,8 @@ export async function getReportDetailRows(f: ReportFilters, limit?: number): Pro
       productCode: string;
       productName: string;
       quantity: number;
+      unitSnapshot: string | null;
+      unitDetailSnapshot: string | null;
       price: Prisma.Decimal;
       total: Prisma.Decimal;
       currentCost: Prisma.Decimal;
@@ -308,6 +318,8 @@ export async function getReportDetailRows(f: ReportFilters, limit?: number): Pro
       ii."product_code_snapshot" AS "productCode",
       ii."product_name_snapshot" AS "productName",
       ii."quantity" AS "quantity",
+      ii."unit_snapshot" AS "unitSnapshot",
+      ii."unit_detail_snapshot" AS "unitDetailSnapshot",
       ii."price" AS "price",
       ii."total" AS "total",
       p."current_cost" AS "currentCost"
@@ -330,6 +342,7 @@ export async function getReportDetailRows(f: ReportFilters, limit?: number): Pro
       productCode: r.productCode,
       productName: r.productName,
       quantity: r.quantity,
+      unit: formatUnit(r.unitSnapshot, r.unitDetailSnapshot),
       price: r.price.toFixed(2),
       total: r.total.toFixed(2),
       cost: cost.toFixed(2),

@@ -105,8 +105,9 @@ export function buildSalesReportPdf(input: SalesReportPdfInput): Promise<Buffer>
       contentBottom,
       columns: [
         { label: "Code", x: 50, width: 55 },
-        { label: "Product", x: 105, width: 150 },
-        { label: "Units", x: 260, width: 45, align: "right" },
+        { label: "Product", x: 105, width: 110 },
+        { label: "Unit", x: 220, width: 45 },
+        { label: "Qty", x: 268, width: 35, align: "right" },
         { label: "Revenue", x: 310, width: 80, align: "right" },
         { label: "Profit", x: 395, width: 80, align: "right" },
         { label: "Margin", x: 480, width: 50, align: "right" },
@@ -114,6 +115,7 @@ export function buildSalesReportPdf(input: SalesReportPdfInput): Promise<Buffer>
       rows: input.byProduct.map((r) => [
         r.productCode,
         r.productName,
+        r.unit,
         String(r.unitsSold),
         `$${r.revenue}`,
         `$${r.profit}`,

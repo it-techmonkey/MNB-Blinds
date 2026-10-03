@@ -1,6 +1,6 @@
 import PDFDocument from "pdfkit";
 import type { Invoice, InvoiceItem, Client } from "@/generated/prisma/client";
-import { formatDecimal } from "@/server/serialize";
+import { formatDecimal, formatUnit } from "@/server/serialize";
 import { COMPANY_LETTERHEAD } from "@/lib/site";
 import { drawPdfLetterhead, drawPdfFooter, PDF_FOOTER_HEIGHT } from "@/server/services/pdf-layout";
 
@@ -51,16 +51,18 @@ export function buildInvoicePdf(invoice: InvoiceForPdf): Promise<Buffer> {
 
     let y = doc.y;
     const colCode = 50;
-    const colDesc = 120;
-    const colQty = 330;
-    const colPrice = 390;
-    const colTotal = 460;
+    const colDesc = 112;
+    const colQty = 248;
+    const colUnit = 282;
+    const colPrice = 380;
+    const colTotal = 465;
 
     doc.font("Helvetica-Bold");
     doc.text("Code", colCode, y);
     doc.text("Product", colDesc, y);
     doc.text("Qty", colQty, y);
-    doc.text("Price", colPrice, y);
+    doc.text("Unit", colUnit, y);
+    doc.text("Price/unit", colPrice, y);
     doc.text("Total", colTotal, y);
     y += 18;
     doc.font("Helvetica");
@@ -74,11 +76,13 @@ export function buildInvoicePdf(invoice: InvoiceForPdf): Promise<Buffer> {
         y = doc.y;
       }
       doc.text(item.productCodeSnapshot, colCode, y, { width: 65 });
-      doc.text(item.productNameSnapshot, colDesc, y, { width: 200 });
-      doc.text(String(item.quantity), colQty, y);
+      const unit = formatUnit(item.unitSnapshot, item.unitDetailSnapshot);
+      doc.text(item.productNameSnapshot, colDesc, y, { width: 130 });
+      doc.text(String(item.quantity), colQty, y, { width: 30 });
+      doc.text(unit, colUnit, y, { width: 92 });
       doc.text(formatDecimal(item.price), colPrice, y);
       doc.text(formatDecimal(item.total), colTotal, y);
-      y += Math.max(18, doc.heightOfString(item.productNameSnapshot, { width: 200 }) + 4);
+      y += Math.max(18, doc.heightOfString(item.productNameSnapshot, { width: 130 }) + 4, doc.heightOfString(unit, { width: 92 }) + 4);
     }
 
     if (y + 40 > contentBottom) {

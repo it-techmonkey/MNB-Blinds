@@ -256,12 +256,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 </thead>
                 <tbody>
                   {report.byProduct.map((r) => (
-                    <tr key={r.productId} className="table-row">
+                    <tr key={`${r.productId}-${r.unit}`} className="table-row">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-foreground">{r.productName}</p>
                         <p className="text-xs text-muted-foreground">{r.productCode}</p>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{r.unitsSold}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {r.unitsSold}
+                        <p className="text-xs text-muted-foreground">{r.unit}</p>
+                      </td>
                       <td className="px-4 py-3 text-right font-medium tabular-nums">${r.revenue}</td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         <p className="font-medium text-foreground">${r.profit}</p>
@@ -332,7 +335,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                   <th className="px-3 py-3 font-medium">Client</th>
                   <th className="px-3 py-3 font-medium">Product</th>
                   <th className="px-3 py-3 text-right font-medium">Qty</th>
-                  <th className="px-3 py-3 text-right font-medium">Price</th>
+                  <th className="px-3 py-3 font-medium">Unit</th>
+                  <th className="px-3 py-3 text-right font-medium">Price per unit</th>
                   <th className="px-3 py-3 text-right font-medium">Total</th>
                   <th className="px-3 py-3 text-right font-medium">Profit</th>
                   <th className="px-3 py-3 font-medium">Status</th>
@@ -353,6 +357,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                       <p className="text-xs text-muted-foreground">{r.productCode}</p>
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums">{r.quantity}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{r.unit}</td>
                     <td className="px-3 py-3 text-right tabular-nums">${r.price}</td>
                     <td className="px-3 py-3 text-right font-medium tabular-nums">${r.total}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">${r.profit}</td>

@@ -82,10 +82,12 @@ export default async function MonthlySalesReportPage({ searchParams }: { searchP
                   </thead>
                   <tbody>
                     {group.rows.map((r) => (
-                      <tr key={`${group.label}-${r.productId}`} className="table-row">
+                      <tr key={`${group.label}-${r.productId}-${r.unit}`} className="table-row">
                         <td className="px-4 py-3 text-muted-foreground">{r.productCode}</td>
                         <td className="px-4 py-3 font-semibold">{r.productName}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{r.unitsSold}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {r.unitsSold} <span className="text-xs text-muted-foreground">{r.unit}</span>
+                        </td>
                         <td className="px-4 py-3 text-right font-medium tabular-nums">${r.revenue}</td>
                       </tr>
                     ))}

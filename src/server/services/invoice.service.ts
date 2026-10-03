@@ -32,7 +32,7 @@ async function nextCreditNoteNumber(tx: Prisma.TransactionClient, prefix: string
 
 export type InvoiceLineInput = { productId: string; quantity: number; price: number };
 
-export async function createInvoice(clientId: string, items: InvoiceLineInput[]) {
+export async function createInvoice(clientId: string, items: InvoiceLineInput[], draftId?: string) {
   const client = await prisma.client.findUnique({ where: { id: clientId } });
   if (!client) throw new NotFoundError("Client not found");
 
@@ -47,6 +47,8 @@ export async function createInvoice(clientId: string, items: InvoiceLineInput[])
     productId: string;
     productCodeSnapshot: string;
     productNameSnapshot: string;
+    unitSnapshot: string | null;
+    unitDetailSnapshot: string | null;
     price: Prisma.Decimal;
     quantity: number;
     total: Prisma.Decimal;
@@ -66,6 +68,8 @@ export async function createInvoice(clientId: string, items: InvoiceLineInput[])
       productId: product.id,
       productCodeSnapshot: product.code,
       productNameSnapshot: product.name,
+      unitSnapshot: product.unit,
+      unitDetailSnapshot: product.unitDetail,
       price,
       quantity: line.quantity,
       total: lineTotal,
@@ -98,6 +102,9 @@ export async function createInvoice(clientId: string, items: InvoiceLineInput[])
           }
 
           const invoiceNumber = await nextInvoiceNumber(tx, prefix);
+
+          // The draft has become a real order, so it leaves the saved list in the same transaction.
+          if (draftId) await tx.invoiceDraft.deleteMany({ where: { id: draftId } });
 
           return tx.invoice.create({
             data: {

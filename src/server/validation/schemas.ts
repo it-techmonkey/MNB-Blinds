@@ -101,6 +101,12 @@ export const invoiceItemInputSchema = z.object({
 export const createInvoiceSchema = z.object({
   clientId: z.string().min(1),
   items: z.array(invoiceItemInputSchema).min(1).max(200),
+  draftId: z.string().min(1).optional(),
+});
+
+export const saveDraftSchema = z.object({
+  clientId: z.string().min(1),
+  items: z.array(invoiceItemInputSchema).min(1).max(200),
 });
 
 export const invoicePaymentStatusSchema = z.object({

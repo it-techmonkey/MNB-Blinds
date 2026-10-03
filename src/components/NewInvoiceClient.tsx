@@ -5,8 +5,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiJson } from "@/lib/api-client";
 
 type ClientRow = { id: string; code: string; name: string };
-type ProductRow = { id: string; code: string; name: string; stock: number };
+type ProductRow = { id: string; code: string; name: string; stock: number; unit: string | null; unitDetail: string | null };
 type PriceRow = { productId: string; price: string };
+type DraftRow = {
+  id: string;
+  clientId: string;
+  items: { productId: string; productName: string; quantity: number; price: string }[];
+};
 type SortKey = "code" | "name" | "price";
 
 export function NewInvoiceClient() {
@@ -23,6 +28,10 @@ export function NewInvoiceClient() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [draftNotices, setDraftNotices] = useState<string[]>([]);
+  const draftId = searchParams.get("draftId");
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +44,37 @@ export function NewInvoiceClient() {
         if (cancelled) return;
         setClients(cRes.data);
         setProducts(pRes.data);
+
+        if (draftId) {
+          const { draft } = await apiJson<{ draft: DraftRow }>(`/api/drafts/${draftId}`);
+          const { prices: current } = await apiJson<{ prices: PriceRow[] }>(`/api/clients/${draft.clientId}/prices`);
+          if (cancelled) return;
+          const currentByProduct = new Map(current.map((p) => [p.productId, p.price]));
+          const productById = new Map(pRes.data.map((p) => [p.id, p]));
+          const notices: string[] = [];
+          const nextQuantities: Record<string, string> = {};
+          const nextPrices: Record<string, string> = {};
+          for (const item of draft.items) {
+            const product = productById.get(item.productId);
+            if (!product) {
+              notices.push(`${item.productName} is no longer available and was removed.`);
+              continue;
+            }
+            if (item.quantity > product.stock) {
+              notices.push(`${product.name}: only ${product.stock} in stock (draft had ${item.quantity}).`);
+            }
+            nextQuantities[item.productId] = String(item.quantity);
+            const now = currentByProduct.get(item.productId);
+            if (now === undefined) nextPrices[item.productId] = item.price;
+            else if (Number(now) !== Number(item.price)) {
+              notices.push(`${product.name}: price changed from $${Number(item.price).toFixed(2)} to $${Number(now).toFixed(2)}.`);
+            }
+          }
+          setClientId(draft.clientId);
+          setQuantities(nextQuantities);
+          setPrices(nextPrices);
+          setDraftNotices(notices);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
       } finally {
@@ -44,7 +84,7 @@ export function NewInvoiceClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [draftId]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -104,32 +144,52 @@ export function NewInvoiceClient() {
       .filter((l) => l.quantity > 0);
   }, [products, quantities, prices, clientPrices]);
 
-  async function submit() {
+  function validate(): boolean {
     if (!clientId) {
       setError("Select a client.");
-      return;
+      return false;
     }
     if (lines.length === 0) {
       setError("Enter a quantity for at least one product.");
-      return;
+      return false;
     }
     if (lines.some((l) => isNaN(l.price) || l.price < 0)) {
       setError("Enter a valid price for every product with a quantity.");
-      return;
+      return false;
     }
     setError(null);
+    return true;
+  }
+
+  const payloadItems = () => lines.map((l) => ({ productId: l.product.id, quantity: l.quantity, price: l.price }));
+
+  async function saveForLater() {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      await apiJson(draftId ? `/api/drafts/${draftId}` : "/api/drafts", {
+        method: draftId ? "PUT" : "POST",
+        body: JSON.stringify({ clientId, items: payloadItems() }),
+      });
+      router.push("/invoices/drafts");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save draft");
+      setSaving(false);
+    }
+  }
+
+  async function submit() {
     setSubmitting(true);
     try {
       const res = await apiJson<{ invoice: { id: string } }>("/api/invoices", {
         method: "POST",
-        body: JSON.stringify({
-          clientId,
-          items: lines.map((l) => ({ productId: l.product.id, quantity: l.quantity, price: l.price })),
-        }),
+        body: JSON.stringify({ clientId, items: payloadItems(), draftId: draftId ?? undefined }),
       });
       router.push(`/invoices/${res.invoice.id}`);
       router.refresh();
     } catch (e) {
+      setConfirming(false);
       setError(e instanceof Error ? e.message : "Invoice creation failed");
     } finally {
       setSubmitting(false);
@@ -153,6 +213,16 @@ export function NewInvoiceClient() {
   return (
     <div className="content-stack">
       {error ? <p className="alert-error">{error}</p> : null}
+      {draftNotices.length > 0 ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">This saved draft was updated to today&apos;s prices and stock:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {draftNotices.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <section className="card-dashboard p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-foreground">Client</h2>
@@ -186,7 +256,8 @@ export function NewInvoiceClient() {
                   <th className="px-4 py-3">{sortableHeader("name", "Product")}</th>
                   <th className="px-4 py-3 text-right font-medium">Stock</th>
                   <th className="px-4 py-3 text-right font-medium">Qty</th>
-                  <th className="px-4 py-3 text-right">{sortableHeader("price", "Price")}</th>
+                  <th className="px-4 py-3 font-medium">Unit</th>
+                  <th className="px-4 py-3 text-right">{sortableHeader("price", "Price per unit")}</th>
                   <th className="px-4 py-3 text-right font-medium">Line total</th>
                 </tr>
               </thead>
@@ -210,6 +281,7 @@ export function NewInvoiceClient() {
                           onChange={(e) => setQuantities((prev) => ({ ...prev, [p.id]: e.target.value }))}
                         />
                       </td>
+                      <td className="px-4 py-3 text-muted-foreground">{[p.unit, p.unitDetail].filter(Boolean).join(" · ") || "—"}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="relative ml-auto w-28">
                           <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
@@ -238,10 +310,49 @@ export function NewInvoiceClient() {
           <span className="font-semibold text-foreground">{lines.length}</span> line{lines.length === 1 ? "" : "s"} · Total{" "}
           <span className="font-semibold text-foreground">${total.toFixed(2)}</span>
         </p>
-        <button type="button" disabled={submitting || lines.length === 0} className="btn-primary w-full sm:w-auto" onClick={submit}>
-          {submitting ? "Creating…" : "Create invoice"}
-        </button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <button type="button" disabled={saving || submitting || lines.length === 0} className="btn-secondary w-full sm:w-auto" onClick={saveForLater}>
+            {saving ? "Saving…" : "Save for later"}
+          </button>
+          <button
+            type="button"
+            disabled={saving || submitting || lines.length === 0}
+            className="btn-primary w-full sm:w-auto"
+            onClick={() => validate() && setConfirming(true)}
+          >
+            Create invoice
+          </button>
+        </div>
       </div>
+
+      {confirming ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !submitting) setConfirming(false);
+          }}
+        >
+          <div className="card-dashboard my-8 w-full max-w-md space-y-5 p-6 shadow-[0_24px_64px_-12px_rgba(13,20,32,0.32)]">
+            <div>
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-foreground">Are you sure you want to place this order?</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {lines.length} line{lines.length === 1 ? "" : "s"} · Total ${total.toFixed(2)}
+              </p>
+            </div>
+            <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+              Stock will be deducted now. An invoice can&apos;t be deleted once created, only reversed with a credit note. If the client isn&apos;t ready, use Save for later instead.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={submitting} onClick={() => setConfirming(false)} className="btn-secondary h-9 px-4 text-sm">
+                Cancel
+              </button>
+              <button type="button" disabled={submitting} onClick={submit} className="btn-primary h-9 px-4 text-sm">
+                {submitting ? "Creating…" : "Yes, create invoice"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

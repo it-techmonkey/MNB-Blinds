@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
   try {
     await requireAuth(request);
     const body = await request.json();
-    const { clientId, items } = createInvoiceSchema.parse(body);
-    const invoice = await createInvoice(clientId, items);
+    const { clientId, items, draftId } = createInvoiceSchema.parse(body);
+    const invoice = await createInvoice(clientId, items, draftId);
     return jsonOk({ invoice: serializeInvoice(invoice) }, 201);
   } catch (e) {
     if (e instanceof ZodError) {

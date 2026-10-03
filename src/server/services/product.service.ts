@@ -1,7 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { AppError, NotFoundError } from "@/server/errors";
-import { formatDecimal } from "@/server/serialize";
+import { formatDecimal, formatUnit } from "@/server/serialize";
 
 export function serializeProduct(p: {
   id: string;
@@ -317,23 +317,26 @@ export type MonthlySalesRow = {
   productId: string;
   productCode: string;
   productName: string;
+  unit: string;
   unitsSold: number;
   revenue: string;
 };
 
 export async function getMonthlySales(): Promise<MonthlySalesRow[]> {
   const rows = await prisma.$queryRaw<
-    { month: Date; productId: string; unitsSold: bigint; revenue: Prisma.Decimal }[]
+    { month: Date; productId: string; unitSnapshot: string | null; unitDetailSnapshot: string | null; unitsSold: bigint; revenue: Prisma.Decimal }[]
   >`
     SELECT
       DATE_TRUNC('month', i."created_at") AS month,
       ii."product_id" AS "productId",
+      ii."unit_snapshot" AS "unitSnapshot",
+      ii."unit_detail_snapshot" AS "unitDetailSnapshot",
       SUM(ii."quantity")::bigint AS "unitsSold",
       SUM(ii."total") AS revenue
     FROM "invoice_items" ii
     JOIN "invoices" i ON i."id" = ii."invoice_id"
     WHERE NOT EXISTS (SELECT 1 FROM "credit_notes" cn WHERE cn."invoice_id" = i."id")
-    GROUP BY DATE_TRUNC('month', i."created_at"), ii."product_id"
+    GROUP BY DATE_TRUNC('month', i."created_at"), ii."product_id", ii."unit_snapshot", ii."unit_detail_snapshot"
     ORDER BY month DESC
   `;
   if (rows.length === 0) return [];
@@ -351,6 +354,7 @@ export async function getMonthlySales(): Promise<MonthlySalesRow[]> {
       productId: r.productId,
       productCode: product?.code ?? "—",
       productName: product?.name ?? "Deleted product",
+      unit: formatUnit(r.unitSnapshot, r.unitDetailSnapshot),
       unitsSold: Number(r.unitsSold),
       revenue: r.revenue.toFixed(2),
     };

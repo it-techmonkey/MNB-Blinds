@@ -4,6 +4,7 @@ import { PaymentStatusSelect } from "@/components/PaymentStatusSelect";
 import { PaymentStatusBadge } from "@/components/PaymentStatusBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { getSession } from "@/lib/auth/get-session";
+import { countDrafts } from "@/server/services/draft.service";
 import { listAllInvoices } from "@/server/services/invoice.service";
 import { serializeInvoiceRow } from "@/server/serialize";
 import { redirect } from "next/navigation";
@@ -38,7 +39,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
 
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
-  const { data, pagination } = await listAllInvoices(page, 20);
+  const [{ data, pagination }, draftCount] = await Promise.all([listAllInvoices(page, 20), countDrafts()]);
   const sort = isSortField(sp.sort) ? sp.sort : "time";
   const direction: SortDirection = sp.direction === "asc" ? "asc" : "desc";
   const rows = data.map(serializeInvoiceRow).sort((a, b) => {
@@ -68,9 +69,14 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
         title="Invoices"
         subtitle="Every sale, in the order it happened."
         actions={
-          <Link href="/invoices/new" className="btn-primary w-full lg:w-auto">
-            New invoice
-          </Link>
+          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <Link href="/invoices/drafts" className="btn-secondary w-full lg:w-auto">
+              Saved drafts{draftCount > 0 ? ` (${draftCount})` : ""}
+            </Link>
+            <Link href="/invoices/new" className="btn-primary w-full lg:w-auto">
+              New invoice
+            </Link>
+          </div>
         }
       />
 
